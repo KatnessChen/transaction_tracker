@@ -9,8 +9,9 @@ import (
 )
 
 type Handlers struct {
-	Transactions *TransactionsHandler
-	Auth         *AuthHandler
+	Transactions               *TransactionsHandler
+	ExtractTransactionsHandler *ExtractTransactionHandler
+	Auth                       *AuthHandler
 }
 
 // InitHandlers wires up all dependencies and returns a Handlers struct
@@ -25,7 +26,8 @@ func InitHandlers(db *gorm.DB, cfg *config.Config) *Handlers {
 	}
 
 	return &Handlers{
-		Transactions: NewTransactionsHandler(transactionService, aiClient),
-		Auth:         NewAuthHandler(db, cfg),
+		Transactions:               NewTransactionsHandler(transactionService),
+		ExtractTransactionsHandler: NewExtractTransactionsHandler(cfg, aiClient),
+		Auth:                       NewAuthHandler(db, cfg),
 	}
 }

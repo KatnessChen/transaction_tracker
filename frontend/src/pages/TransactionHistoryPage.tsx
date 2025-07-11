@@ -28,7 +28,6 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination'
 import { EditIcon, DeleteIcon } from '@/components/icons'
-import { formatCurrency } from '@/utils'
 import EmptyTransactionsState from '@/components/EmptyTransactionsState'
 import { TransactionCard } from '@/components/TransactionCard'
 import Title from '@/components/ui/title'
@@ -375,7 +374,7 @@ export default function TransactionHistoryPage() {
                             sortDirection={sortField === 'user_notes' ? sortDirection : null}
                             onSort={() => handleSort('user_notes')}
                           >
-                            User Notes
+                            Notes
                           </TableHead>
                           <TableHead>Action</TableHead>
                         </TableRow>
@@ -396,16 +395,20 @@ export default function TransactionHistoryPage() {
                             >
                               {transaction.trade_type}
                             </TableCell>
-                            <TableCell>{formatCurrency(transaction.price)}</TableCell>
-                            <TableCell>{transaction.quantity.toLocaleString()}</TableCell>
                             <TableCell className="text-right text-muted-foreground">
-                              {transaction.trade_type === TRADE_TYPE.SELL ? '-' : ''}
-                              {formatCurrency(Math.abs(transaction.amount))}
+                              ${transaction.price}
                             </TableCell>
-                            <TableCell>{transaction.currency}</TableCell>
+                            <TableCell className="text-right text-muted-foreground">
+                              {transaction.quantity}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {transaction.trade_type === TRADE_TYPE.SELL ? '-' : ''}$
+                              {transaction.amount}
+                            </TableCell>
+                            <TableCell className="text-right">{transaction.currency}</TableCell>
                             <TableCell>{transaction.broker}</TableCell>
                             <TableCell className="max-w-32 truncate">
-                              {transaction.user_notes || '-'}
+                              {transaction.user_notes}
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">

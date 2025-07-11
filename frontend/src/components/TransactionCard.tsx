@@ -180,13 +180,13 @@ export function TransactionCard({
               <span className="text-foreground text-sm">{transaction.currency}</span>
             </div>
 
-            {/* User Notes - Editable */}
+            {/* Notes - Editable */}
             <div
               className={`space-y-2 transform transition-all duration-300 hover:translate-x-1 ${
                 isExpanded ? 'translate-y-0 opacity-100 delay-200' : 'translate-y-2 opacity-0'
               }`}
             >
-              <span className="text-muted text-sm block">User Notes:</span>
+              <span className="text-muted text-sm block">Notes:</span>
               {isEditingNotes ? (
                 <Input
                   value={notes}

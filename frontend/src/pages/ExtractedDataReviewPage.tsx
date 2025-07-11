@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ConfirmationModal, ImageViewerModal } from '@/components/ui'
 import { Dropdown, DropdownItem } from '@/components/ui/dropdown'
+import DropdownTrigger from '@/components/ui/dropdown-trigger'
 import {
   Table,
   TableBody,
@@ -27,13 +28,18 @@ import {
 } from '@/constants/fileProcessingStatus'
 import {
   updateExtractedTransactions,
-  setValidationError,
   clearValidationError,
   clearCurrentFile,
 } from '@/store/fileProcessingSlice'
 import { getSerializableFileUrl, getFileStatus, getStatusIconName } from '@/utils/fileUtils'
 import { TransactionService } from '@/services/transaction.service'
 import { useToast } from '@/hooks/useToast'
+import { abs } from '@/utils'
+import {
+  validateTransactionDate,
+  validateTransactionQuantity,
+  validateTransactionPrice,
+} from '@/utils/transactionValidation'
 
 const statusIconMap = {
   ClockIcon,
@@ -128,11 +134,11 @@ export default function ExtractedDataReviewPage() {
         if (t.id === id) {
           const updatedTransaction = { ...t, [field]: value }
 
-          // Recalculate amount if quantity or price changes
-          if (field === 'quantity' || field === 'price') {
+          // Recalculate amount if quantity or price changes (but not for Dividends)
+          if ((field === 'quantity' || field === 'price') && t.trade_type !== 'Dividends') {
             const quantity = field === 'quantity' ? (value as number) : t.quantity
             const price = field === 'price' ? (value as number) : t.price
-            updatedTransaction.amount = quantity * price
+            updatedTransaction.amount = abs(quantity * price)
           }
 
           return updatedTransaction
@@ -166,54 +172,18 @@ export default function ExtractedDataReviewPage() {
 
     // Validation rules (after updating the value)
     if (field === 'transaction_date') {
-      const dateValue = value as string
-      const inputDate = new Date(dateValue)
-      const today = new Date()
-      const thirtyYearsAgo = new Date()
-      thirtyYearsAgo.setFullYear(today.getFullYear() - 30)
-
-      // Check if date is valid
-      if (isNaN(inputDate.getTime())) {
-        dispatch(setValidationError({ errorKey, message: 'Please enter a valid date.' }))
-        return
-      }
-
-      // Check if date is not in the future
-      if (inputDate > today) {
-        dispatch(
-          setValidationError({
-            errorKey,
-            message: 'Transaction date cannot be in the future.',
-          })
-        )
-        return
-      }
-
-      // Check if date is within 30 years
-      if (inputDate < thirtyYearsAgo) {
-        dispatch(
-          setValidationError({
-            errorKey,
-            message: 'Transaction date must be within the last 30 years.',
-          })
-        )
-        return
-      }
+      if (!validateTransactionDate(value as string, errorKey, dispatch)) return
     }
 
     if (field === 'quantity' || field === 'price') {
       const numericValue = value as number
-
-      // Check if value is a number greater than zero
-      if (isNaN(numericValue) || numericValue <= 0) {
-        const fieldName = field === 'quantity' ? 'Quantity' : 'Price'
-        dispatch(
-          setValidationError({
-            errorKey,
-            message: `${fieldName} must > 0.`,
-          })
-        )
-        return
+      // Find the trade type for this transaction
+      const tradeType = currentTransactions.find((t) => t.id === id)?.trade_type || ''
+      if (field === 'quantity') {
+        if (!validateTransactionQuantity(tradeType, numericValue, errorKey, dispatch)) return
+      }
+      if (field === 'price') {
+        if (!validateTransactionPrice(tradeType, numericValue, errorKey, dispatch)) return
       }
     }
   }
@@ -480,10 +450,11 @@ export default function ExtractedDataReviewPage() {
                         <TableHead className="w-[50px]">Select</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Symbol</TableHead>
-                        <TableHead>Type</TableHead>
+                        <TableHead>Trade Type</TableHead>
                         <TableHead>Quantity</TableHead>
                         <TableHead>Price</TableHead>
                         <TableHead>Amount</TableHead>
+                        <TableHead>Broker</TableHead>
                         <TableHead>Exchange</TableHead>
                         <TableHead>Currency</TableHead>
                         <TableHead>Notes</TableHead>
@@ -513,13 +484,7 @@ export default function ExtractedDataReviewPage() {
                                       e.target.value
                                     )
                                   }
-                                  className={`w-[120px] ${
-                                    validationErrors[
-                                      `file-${currentFileIndex}-${transaction.id}-transaction_date`
-                                    ]
-                                      ? 'border-red-500 focus:border-red-500 focus-visible:ring-red-500'
-                                      : ''
-                                  }`}
+                                  className={`w-[120px]`}
                                 />
                                 {validationErrors[
                                   `file-${currentFileIndex}-${transaction.id}-transaction_date`
@@ -548,9 +513,7 @@ export default function ExtractedDataReviewPage() {
                             <TableCell>
                               <Dropdown
                                 trigger={
-                                  <Button variant="outline" size="sm">
-                                    {transaction.trade_type}
-                                  </Button>
+                                  <DropdownTrigger>{transaction.trade_type}</DropdownTrigger>
                                 }
                               >
                                 <DropdownItem
@@ -648,9 +611,34 @@ export default function ExtractedDataReviewPage() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <span className={'font-medium'}>
-                                ${transaction.amount.toFixed(2)}
-                              </span>
+                              {transaction.trade_type === 'Dividends' ? (
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={transaction.amount}
+                                  onChange={(e) =>
+                                    handleCellEdit(
+                                      transaction.id,
+                                      'amount',
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  className="w-[120px]"
+                                />
+                              ) : (
+                                <span className={'font-medium'}>
+                                  ${transaction.amount.toFixed(2)}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={transaction.broker}
+                                onChange={(e) =>
+                                  handleCellEdit(transaction.id, 'broker', e.target.value)
+                                }
+                                className="w-[100px]"
+                              />
                             </TableCell>
                             <TableCell>
                               <Input
@@ -663,17 +651,7 @@ export default function ExtractedDataReviewPage() {
                             </TableCell>
                             <TableCell>
                               <Dropdown
-                                trigger={
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-[80px] justify-between"
-                                  >
-                                    <span className="flex items-center gap-1">
-                                      {transaction.currency}
-                                    </span>
-                                  </Button>
-                                }
+                                trigger={<DropdownTrigger>{transaction.currency}</DropdownTrigger>}
                               >
                                 {Object.entries(CURRENCY).map(([key, value]) => (
                                   <DropdownItem

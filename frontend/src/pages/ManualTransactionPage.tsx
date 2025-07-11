@@ -8,23 +8,8 @@ import { Dropdown, DropdownItem } from '@/components/ui/dropdown'
 import DropdownTrigger from '@/components/ui/dropdown-trigger'
 import { Label } from '@/components/ui/label'
 import { Title } from '@/components/ui/title'
-
-interface ManualTransactionForm {
-  id?: string
-  tradeDate: string
-  symbol: string
-  tradeType: 'Buy' | 'Sell' | 'Dividends' | ''
-  price: string
-  quantity: string
-  amount: string
-  broker: string
-  currency: string
-  notes: string
-}
-
-interface BatchTransaction extends ManualTransactionForm {
-  id: string
-}
+import type { TransactionData, TradeType } from '@/types'
+import { TRADE_TYPE } from '@/constants'
 
 interface Currency {
   code: string
@@ -43,20 +28,22 @@ interface Symbol {
 
 export default function ManualTransactionPage() {
   const navigate = useNavigate()
-  const [transaction, setTransaction] = useState<ManualTransactionForm>({
-    tradeDate: '',
+  const [transaction, setTransaction] = useState<TransactionData>({
+    id: '',
+    transaction_date: '',
     symbol: '',
-    tradeType: '',
-    price: '',
-    quantity: '',
-    amount: '',
+    trade_type: TRADE_TYPE.BUY as TradeType,
+    price: 0,
+    quantity: 0,
+    amount: 0,
     broker: '',
     currency: CURRENCY.USD,
-    notes: '',
+    exchange: '',
+    user_notes: '',
   })
 
   // Batch state management
-  const [batch, setBatch] = useState<BatchTransaction[]>([])
+  const [batch, setBatch] = useState<TransactionData[]>([])
 
   // API data states
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -178,8 +165,8 @@ export default function ManualTransactionPage() {
     fetchSymbols()
   }, [])
 
-  const handleInputChange = useCallback((field: keyof ManualTransactionForm, value: string) => {
-    setTransaction((prev: ManualTransactionForm) => ({
+  const handleInputChange = useCallback((field: keyof TransactionData, value: string) => {
+    setTransaction((prev: TransactionData) => ({
       ...prev,
       [field]: value,
     }))
@@ -187,9 +174,7 @@ export default function ManualTransactionPage() {
 
   // Calculate total amount from price and quantity
   const calculatedAmount = useMemo(() => {
-    const price = parseFloat(transaction.price) || 0
-    const quantity = parseFloat(transaction.quantity) || 0
-    return price * quantity
+    return transaction.price * transaction.quantity
   }, [transaction.price, transaction.quantity])
 
   // Format amount display based on trade type
@@ -198,7 +183,7 @@ export default function ManualTransactionPage() {
 
     const formattedValue = calculatedAmount.toFixed(2)
 
-    switch (transaction.tradeType) {
+    switch (transaction.trade_type) {
       case 'Sell':
         return `-$${formattedValue}`
       case 'Buy':
@@ -206,28 +191,30 @@ export default function ManualTransactionPage() {
       default:
         return `$${formattedValue}`
     }
-  }, [calculatedAmount, transaction.tradeType])
+  }, [calculatedAmount, transaction.trade_type])
 
   const addToBatch = useCallback(() => {
-    const newTransaction: BatchTransaction = {
+    const newTransaction: TransactionData = {
       ...transaction,
       id: `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      amount: calculatedAmount.toString(),
+      amount: calculatedAmount,
     }
 
     setBatch((prev) => [...prev, newTransaction])
 
     // Clear form for next transaction
     setTransaction({
-      tradeDate: '',
+      id: '',
+      transaction_date: '',
       symbol: '',
-      tradeType: '',
-      price: '',
-      quantity: '',
-      amount: '',
+      trade_type: TRADE_TYPE.BUY as TradeType,
+      price: 0,
+      quantity: 0,
+      amount: 0,
       broker: '',
       currency: CURRENCY.USD,
-      notes: '',
+      exchange: '',
+      user_notes: '',
     })
   }, [transaction, calculatedAmount])
 
@@ -242,9 +229,9 @@ export default function ManualTransactionPage() {
   }, [navigate])
 
   const isFormValid =
-    transaction.tradeDate &&
+    transaction.transaction_date &&
     transaction.symbol &&
-    transaction.tradeType &&
+    transaction.trade_type &&
     transaction.price &&
     transaction.quantity &&
     transaction.currency
@@ -269,8 +256,8 @@ export default function ManualTransactionPage() {
                 <Input
                   id="trade-date-input"
                   type="date"
-                  value={transaction.tradeDate}
-                  onChange={(e) => handleInputChange('tradeDate', e.target.value)}
+                  value={transaction.transaction_date}
+                  onChange={(e) => handleInputChange('transaction_date', e.target.value)}
                   className="w-full"
                 />
               </div>
@@ -316,18 +303,18 @@ export default function ManualTransactionPage() {
                 <Dropdown
                   trigger={
                     <DropdownTrigger className="w-full">
-                      {transaction.tradeType || 'Select trade type'}
+                      {transaction.trade_type || 'Select trade type'}
                     </DropdownTrigger>
                   }
                   className="w-full"
                 >
-                  <DropdownItem onClick={() => handleInputChange('tradeType', 'Buy')}>
+                  <DropdownItem onClick={() => handleInputChange('trade_type', 'Buy')}>
                     Buy
                   </DropdownItem>
-                  <DropdownItem onClick={() => handleInputChange('tradeType', 'Sell')}>
+                  <DropdownItem onClick={() => handleInputChange('trade_type', 'Sell')}>
                     Sell
                   </DropdownItem>
-                  <DropdownItem onClick={() => handleInputChange('tradeType', 'Dividends')}>
+                  <DropdownItem onClick={() => handleInputChange('trade_type', 'Dividends')}>
                     Dividends
                   </DropdownItem>
                 </Dropdown>
@@ -440,16 +427,16 @@ export default function ManualTransactionPage() {
                 <textarea
                   id="notes-textarea"
                   placeholder="Optional notes about this transaction"
-                  value={transaction.notes}
+                  value={transaction.user_notes}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                    handleInputChange('notes', e.target.value.slice(0, 100))
+                    handleInputChange('user_notes', e.target.value.slice(0, 100))
                   }
                   className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   rows={3}
                   maxLength={100}
                 />
                 <p className="text-xs text-muted-foreground mt-1 text-right">
-                  {100 - transaction.notes.length} characters remaining
+                  {100 - transaction.user_notes.length} characters remaining
                 </p>
               </div>
             </div>

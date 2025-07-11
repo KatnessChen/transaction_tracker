@@ -28,3 +28,8 @@ export function isValidImageFile(file: File): boolean {
 export function generateId(): string {
   return Math.random().toString(36).substring(2) + Date.now().toString(36)
 }
+
+// Get absolute value of a number
+export function abs(value: number): number {
+  return Math.abs(value)
+}

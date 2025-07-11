@@ -8,31 +8,20 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/transaction-tracker/backend/internal/ai"
-	"github.com/transaction-tracker/backend/internal/constants"
 	"github.com/transaction-tracker/backend/internal/models"
 	"github.com/transaction-tracker/backend/internal/services"
 	"github.com/transaction-tracker/backend/internal/types"
 	"github.com/transaction-tracker/backend/internal/utils"
 )
 
+// NewTransactionsHandler creates a new TransactionsHandler
+func NewTransactionsHandler(service *services.TransactionService) *TransactionsHandler {
+	return &TransactionsHandler{transactionService: service}
+}
+
 // TransactionsHandler handles transaction-related endpoints
 type TransactionsHandler struct {
 	transactionService *services.TransactionService
-	aiClient           ai.Client
-}
-
-// NewTransactionsHandler creates a new TransactionsHandler
-func NewTransactionsHandler(service *services.TransactionService, aiClient ai.Client) *TransactionsHandler {
-	return &TransactionsHandler{
-		transactionService: service,
-		aiClient:           aiClient,
-	}
-}
-
-// Close closes the AI client and cleans up resources
-func (h *TransactionsHandler) Close() error {
-	return h.aiClient.Close()
 }
 
 // TransactionRequest represents the request structure for creating transactions
@@ -137,63 +126,6 @@ func modelsToTransactionData(transactions []models.Transaction) []types.Transact
 		responseTransactions[i] = modelToTransactionData(transaction)
 	}
 	return responseTransactions
-}
-
-// ExtractTransactions handles the image upload and transaction extraction
-func (h *TransactionsHandler) ExtractTransactions(c *gin.Context) {
-	form, err := c.MultipartForm()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, types.ExtractResponse{
-			Success: false,
-			Message: "Failed to parse multipart form: " + err.Error(),
-		})
-		return
-	}
-	file := form.File["file"] // Get the file directly
-
-	if len(file) == 0 {
-		c.JSON(http.StatusBadRequest, types.ExtractResponse{
-			Success: false,
-			Message: "No file uploaded. Please upload a file under the 'file' field.",
-		})
-		return
-	}
-
-	// Take the first (and only expected) file
-	fileHeader := file[0]
-
-	src, err := fileHeader.Open()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.ExtractResponse{
-			Success: false,
-			Message: "Failed to open uploaded file " + fileHeader.Filename + ": " + err.Error(),
-		})
-		return
-	}
-	defer src.Close()
-
-	fileInput := types.FileInput{
-		Data:     src,
-		Filename: fileHeader.Filename,
-		MimeType: fileHeader.Header.Get(constants.ContentTypeHeader),
-	}
-
-	// Use the reusable AI client
-	extractResp, err := h.aiClient.ExtractTransactions(c.Request.Context(), fileInput)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, types.ExtractResponse{
-			Success: false,
-			Message: "Failed to extract transactions: " + err.Error(),
-		})
-		return
-	}
-
-	if !extractResp.Success {
-		c.JSON(http.StatusInternalServerError, extractResp)
-		return
-	}
-
-	c.JSON(http.StatusOK, extractResp)
 }
 
 // CreateTransactions handles the creation of transaction records in batch
@@ -429,38 +361,40 @@ func validateTransaction(transaction TransactionRequest) error {
 	}
 
 	// Validate quantities and amounts
-	if transaction.Quantity <= 0 {
-		return fmt.Errorf("quantity must be positive")
-	}
-	if transaction.Price <= 0 {
-		return fmt.Errorf("price must be positive")
-	}
-	if transaction.Amount <= 0 {
-		return fmt.Errorf("amount must be positive")
-	}
+	if transaction.TradeType != types.TradeTypeDividend {
+		if transaction.Quantity <= 0 {
+			return fmt.Errorf("quantity must be positive")
+		}
+		if transaction.Price <= 0 {
+			return fmt.Errorf("price must be positive")
+		}
+		if transaction.Amount <= 0 {
+			return fmt.Errorf("amount must be positive")
+		}
 
-	// Validate trade amount calculation (with tolerance for rounding)
-	expectedAmount := transaction.Quantity * transaction.Price
-	tolerance := 0.01
-	if utils.Abs(transaction.Amount-expectedAmount) > tolerance {
-		return fmt.Errorf("amount does not match quantity × price calculation")
+		// Validate trade amount calculation (with tolerance for rounding)
+		expectedAmount := transaction.Quantity * transaction.Price
+		tolerance := 0.1
+		if utils.Abs(transaction.Amount-expectedAmount) > tolerance {
+			return fmt.Errorf("amount does not match quantity × price calculation")
+		}
 	}
 
 	// Validate date format and range
 	tradeDate, err := time.Parse("2006-01-02", transaction.TradeDate)
 	if err != nil {
-		return fmt.Errorf("transaction_date must be in YYYY-MM-DD format")
+		return fmt.Errorf("trade_date must be in YYYY-MM-DD format")
 	}
 
 	// Check date is not in the future
 	if tradeDate.After(time.Now()) {
-		return fmt.Errorf("transaction_date cannot be in the future")
+		return fmt.Errorf("trade_date cannot be in the future")
 	}
 
 	// Check date is not more than 30 years in the past
 	thirtyYearsAgo := time.Now().AddDate(-30, 0, 0)
 	if tradeDate.Before(thirtyYearsAgo) {
-		return fmt.Errorf("transaction_date cannot be more than 30 years in the past")
+		return fmt.Errorf("trade_date cannot be more than 30 years in the past")
 	}
 
 	// Validate user notes length
@@ -599,7 +533,7 @@ func parseTransactionQueryParams(c *gin.Context) (params TransactionQueryParams,
 	if params.SortBy == "" {
 		params.SortBy = "transaction_date"
 	} else {
-		validSortFields := []string{"transaction_date", "symbol", "price", "quantity", "amount"}
+		validSortFields := []string{"transaction_date", "symbol", "price", "quantity", "trade_amount"}
 		valid := false
 		for _, field := range validSortFields {
 			if params.SortBy == field {
@@ -608,7 +542,7 @@ func parseTransactionQueryParams(c *gin.Context) (params TransactionQueryParams,
 			}
 		}
 		if !valid {
-			validationErrors["sort_by"] = []string{"Must be one of: transaction_date, symbol, price, quantity, amount"}
+			validationErrors["sort_by"] = []string{"Must be one of: transaction_date, symbol, price, quantity, trade_amount"}
 		}
 	}
 

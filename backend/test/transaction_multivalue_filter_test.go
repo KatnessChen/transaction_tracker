@@ -1,7 +1,6 @@
 package test
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -21,29 +20,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// mockAIClient is a simple mock implementation of ai.Client for testing
-type mockAIClient struct{}
-
-func (m *mockAIClient) ExtractTransactions(ctx context.Context, image types.FileInput) (*types.ExtractResponse, error) {
-	return &types.ExtractResponse{
-		Success: true,
-		Message: "Mock extraction successful",
-		Data: &types.ExtractResponseData{
-			Transactions:     []types.TransactionData{},
-			TransactionCount: 0,
-			FileName:         image.Filename,
-		},
-	}, nil
-}
-
-func (m *mockAIClient) Health(ctx context.Context) error {
-	return nil
-}
-
-func (m *mockAIClient) Close() error {
-	return nil
-}
-
 func setupTestTransactionsHandler() (*handlers.TransactionsHandler, *gorm.DB, error) {
 	// Create in-memory SQLite database for testing
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
@@ -60,9 +36,8 @@ func setupTestTransactionsHandler() (*handlers.TransactionsHandler, *gorm.DB, er
 	transactionRepo := repositories.NewTransactionRepository(db)
 	transactionService := services.NewTransactionService(transactionRepo)
 
-	// Create mock AI client for testing
-	mockAI := &mockAIClient{}
-	transactionsHandler := handlers.NewTransactionsHandler(transactionService, mockAI)
+	// Create transactions handler without AI client (extraction moved to separate handler)
+	transactionsHandler := handlers.NewTransactionsHandler(transactionService)
 
 	return transactionsHandler, db, nil
 }

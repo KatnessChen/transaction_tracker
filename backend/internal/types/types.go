@@ -13,6 +13,20 @@ const (
 	TradeTypeDividend TradeType = "Dividends"
 )
 
+// ExtractResponseData represents the data part of extract response
+type ExtractResponseData struct {
+	Transactions     []TransactionData `json:"transactions"`
+	TransactionCount int               `json:"transaction_count"`
+	FileName         string            `json:"file_name"`
+}
+
+// ExtractResponse represents the response from AI model
+type ExtractResponse struct {
+	Data    *ExtractResponseData `json:"data,omitempty"`
+	Success bool                 `json:"success"`
+	Message string               `json:"message"`
+}
+
 // TransactionData represents extracted transaction information from AI
 // Uses fields that map to the Transaction model structure
 type TransactionData struct {
@@ -35,20 +49,6 @@ type FileInput struct {
 	Data     io.Reader
 	Filename string
 	MimeType string
-}
-
-// ExtractResponseData represents the data part of extract response
-type ExtractResponseData struct {
-	Transactions     []TransactionData `json:"transactions"`
-	TransactionCount int               `json:"transaction_count"`
-	FileName         string            `json:"file_name"`
-}
-
-// ExtractResponse represents the response from AI model
-type ExtractResponse struct {
-	Data    *ExtractResponseData `json:"data,omitempty"`
-	Success bool                 `json:"success"`
-	Message string               `json:"message"`
 }
 
 // PaginationData represents pagination information

@@ -233,32 +233,27 @@ func (c *AIModelClient) parseTransactionResponse(responseText string, filename s
 	}, nil
 }
 
-// Health checks if the AI client is working properly
+// Health checks if the AI model client is working properly
 func (c *AIModelClient) Health(ctx context.Context) error {
 	switch c.modelType {
 	case ModelTypeGemini:
 		return c.healthCheckGemini(ctx)
 	default:
-		return fmt.Errorf("unsupported model type for health check: %s", c.modelType)
+		return fmt.Errorf("health check not implemented for model type: %s", c.modelType)
 	}
 }
 
 // healthCheckGemini performs a health check for Gemini models
 func (c *AIModelClient) healthCheckGemini(ctx context.Context) error {
-	if c.geminiClient == nil || c.geminiModel == nil {
-		return fmt.Errorf("Gemini client not initialized")
-	}
+	// Simple health check by making a minimal request
+	parts := []genai.Part{genai.Text("Health check - please respond with 'OK'")}
 
-	// Set a short timeout for health check
-	healthCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Send a simple test request to verify the client is working
-	testParts := []genai.Part{genai.Text("Health check. Please respond with 'OK'.")}
-
-	_, err := c.geminiModel.GenerateContent(healthCtx, testParts...)
+	_, err := c.geminiModel.GenerateContent(ctx, parts...)
 	if err != nil {
-		return fmt.Errorf("Gemini health check failed: %w", err)
+		return fmt.Errorf("health check failed: %w", err)
 	}
 
 	return nil
