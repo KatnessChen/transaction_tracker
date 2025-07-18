@@ -1,0 +1,22 @@
+linters:
+  enable:
+    - errcheck
+    - gofmt
+    - goimports
+    - govet
+    - ineffassign
+    - misspell
+    - unused
+    - gosimple
+    - staticcheck
+    - revive
+  disable:
+    - typecheck # Disable due to compatibility issues
+
+run:
+  timeout: 5m
+  tests: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

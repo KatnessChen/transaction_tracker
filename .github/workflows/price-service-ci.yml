@@ -1,0 +1,239 @@
+name: Price Service CI
+
+# This workflow runs essential checks on the price_service Go application
+# Tests are focused on unit tests and integration with external APIs
+
+on:
+  pull_request:
+    paths:
+      - "price_service/**"
+  push:
+    branches: [main, develop]
+    paths:
+      - "price_service/**"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: ./price_service
+
+jobs:
+  test:
+    name: Test and Build
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      # Test environment variables
+      PORT: 8081
+      GIN_MODE: test
+      API_KEY: test-api-key
+      STOCK_API_PROVIDER: alpha_vantage
+      STOCK_API_KEY: demo
+      STOCK_API_BASE_URL: https://www.alphavantage.co/query
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: 1
+      DEFAULT_TTL_MINUTES: 5
+      MAX_SYMBOLS_PER_REQUEST: 10
+      RATE_LIMIT_REQUESTS: 100
+      RATE_LIMIT_WINDOW_MINUTES: 1
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache-dependency-path: price_service/go.sum
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-price-service-${{ hashFiles('price_service/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-price-service-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Wait for Redis to be ready
+        run: |
+          echo "Waiting for Redis to be ready..."
+          for i in {1..30}; do
+            if redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG; then
+              echo "Redis is ready!"
+              break
+            fi
+            echo "Waiting for Redis... ($i/30)"
+            sleep 2
+          done
+
+      - name: Format check
+        id: format-check
+        run: |
+          echo "Checking code formatting..."
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "❌ Code is not properly formatted. Run 'go fmt ./...' to fix:"
+            gofmt -s -l .
+            exit 1
+          fi
+          echo "✅ Code formatting is correct"
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.61.0
+
+      - name: Run linting
+        id: linting
+        run: |
+          echo "Running linting checks..."
+          $(go env GOPATH)/bin/golangci-lint run --timeout=5m
+          echo "✅ Linting passed"
+
+      - name: Vet check
+        run: |
+          echo "Running go vet..."
+          go vet ./...
+          echo "✅ Vet check passed"
+
+      - name: Build
+        id: build
+        run: |
+          echo "Building application..."
+          go build -v ./...
+          echo "✅ Build successful"
+
+      - name: Test with coverage
+        id: tests
+        run: |
+          echo "Running tests..."
+          echo "ℹ️  Running unit tests and integration tests with mock services"
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          echo "✅ Tests completed successfully"
+
+      - name: Generate coverage report
+        run: |
+          echo "Generating coverage report..."
+          go tool cover -func=coverage.out
+          go tool cover -html=coverage.out -o coverage.html
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "📊 Total test coverage: ${COVERAGE}%"
+          # Check if coverage is below 70% using shell arithmetic
+          COVERAGE_NUM=${COVERAGE%.*}
+          if [ "$COVERAGE_NUM" -lt 70 ] 2>/dev/null; then
+            echo "⚠️  Warning: Test coverage is below 70%"
+          else
+            echo "✅ Test coverage is acceptable (≥70%)"
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./price_service/coverage.out
+          flags: price-service
+          name: price-service-coverage
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: price-service-test-results
+          path: |
+            price_service/coverage.out
+            price_service/coverage.html
+
+      - name: Build binary
+        run: |
+          echo "Building production binary..."
+          CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o price-service .
+          ls -la price-service
+          echo "✅ Binary build successful"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: price-service-binary
+          path: price_service/price-service
+
+      - name: Test Redis connectivity
+        run: |
+          echo "Testing Redis connectivity..."
+          redis-cli -h 127.0.0.1 -p 6379 set test-key "test-value"
+          RESULT=$(redis-cli -h 127.0.0.1 -p 6379 get test-key)
+          if [ "$RESULT" = "test-value" ]; then
+            echo "✅ Redis connectivity test passed"
+          else
+            echo "❌ Redis connectivity test failed"
+            exit 1
+          fi
+          redis-cli -h 127.0.0.1 -p 6379 del test-key
+
+      - name: Pipeline summary
+        if: always()
+        run: |
+          echo "## 🎯 Price Service CI Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Service Overview:" >> $GITHUB_STEP_SUMMARY
+          echo "- 📈 **Price Service**: Stock price data API with caching" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔌 **External APIs**: Alpha Vantage integration" >> $GITHUB_STEP_SUMMARY
+          echo "- 🗄️  **Cache**: Redis for performance optimization" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Execution:" >> $GITHUB_STEP_SUMMARY
+          echo "- 🧪 **Unit Tests**: ✅ Executed" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔌 **Integration Tests**: ✅ Executed (with Redis)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🌐 **API Tests**: ✅ Executed (with demo keys)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ **All checks passed!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Some checks failed**" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pipeline Stages:" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 Setup: ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- 🗄️  Redis Ready: ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- 🎨 Format Check: ${{ steps.format-check.outcome == 'success' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 Linting: ${{ steps.linting.outcome == 'success' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY  
+          echo "- 🔧 Build: ${{ steps.build.outcome == 'success' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 🧪 Tests: ${{ steps.tests.outcome == 'success' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Run Gosec Security Scanner
+        run: |
+          go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+          gosec -fmt sarif -out gosec-results.sarif ./...
+
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif

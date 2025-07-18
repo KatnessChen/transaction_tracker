@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  price-service:
+    build: .
+    ports:
+      - "8081:8081"
+    environment:
+      - PORT=8081
+      - GIN_MODE=release
+      - API_KEY=your-api-key-here
+      - STOCK_API_PROVIDER=alpha_vantage
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DEFAULT_TTL_MINUTES=60
+      - RATE_LIMIT_REQUESTS=100
+      - RATE_LIMIT_WINDOW_MINUTES=1
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_data:

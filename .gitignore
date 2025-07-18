@@ -7,6 +7,8 @@
 backend/backend
 backend/transaction-tracker
 backend/transaction-tracker-test
+price_service/price_service
+price_service/tmp
 
 # Test binary, built with `go test -c`
 *.test
